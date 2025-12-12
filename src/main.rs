@@ -414,7 +414,7 @@ async fn main() -> Result<()> {
                         // Entry already contains the rest (timestamp, separator, content)
                         new_content.push_str(entry);
                         if !entry.ends_with('\n') {
-                            new_content.push_str("\n");
+                            new_content.push('\n');
                         }
                     }
 
