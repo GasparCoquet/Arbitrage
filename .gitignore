@@ -1,0 +1,67 @@
+############################################################
+#  Rust / Cargo
+############################################################
+target/                  # compiled artefacts (debug & release)
+/**/*.rs.bk              # rust-analyzer backup files
+.cargo/audit/            # cargo-audit advisory DB (if used)
+
+# Cargo.lock is committed for binary projects (ensures reproducible builds)
+
+############################################################
+#  IDEs & tooling
+############################################################
+# VS Code
+.vscode/
+*.code-workspace
+# JetBrains (CLion / IntelliJ / RustRover)
+.idea/
+*.iml
+out/
+# Other editors
+*.swp
+*.swo
+*~                # emacs / nano backup
+
+############################################################
+#  OS-specific cruft
+############################################################
+# macOS
+.DS_Store
+.AppleDouble
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+############################################################
+#  Logs, temp, tests
+############################################################
+*.log
+*.tmp
+/tmp/
+**/tmp/
+
+############################################################
+#  Runtime generated files
+############################################################
+earnings.txt
+earnings.json
+earnings_summary.txt
+
+############################################################
+#  OneDrive sync placeholders
+############################################################
+.serverversions          # OneDrive hidden file
+~$*                      # Office temp files
+*.lnk                    # accidental shortcut files
+
+############################################################
+#  dotenv & secrets
+############################################################
+.env
+.env.*                   # .env.local, .env.prod, etc.
+
+############################################################
+#  Cargo workspaces (optional)
+############################################################
+/target-dir/             # if you set CARGO_TARGET_DIR

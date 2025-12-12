@@ -1,0 +1,13 @@
+[package]
+name = "arbitrage-bot"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+chrono = "0.4"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+
+# Ethers v2: no "contract" feature. Use "abigen" only if needed.
+ethers = { version = "2", default-features = false, features = ["rustls", "abigen"] }
