@@ -467,7 +467,7 @@ async fn main() -> Result<()> {
                 )
                 .ok();
             }
-            writeln!(file, "").ok();
+            writeln!(file).ok();
             writeln!(file, "MARKET CONDITIONS:").ok();
             writeln!(file, "  Total checks performed: {}", checks).ok();
             if !price_diffs.is_empty() {
@@ -483,7 +483,7 @@ async fn main() -> Result<()> {
                 let avg_gas = gas_costs.iter().sum::<f64>() / gas_costs.len() as f64;
                 writeln!(file, "  Average gas cost: ${:.2} USDC.e", avg_gas).ok();
             }
-            writeln!(file, "").ok();
+            writeln!(file).ok();
             if opps == 0 && checks > 0 {
                 writeln!(
                     file,
@@ -502,7 +502,7 @@ async fn main() -> Result<()> {
                 .ok();
                 writeln!(file, "  - Slippage reduces returns on larger trades").ok();
                 writeln!(file, "  - Competition from other bots").ok();
-                writeln!(file, "").ok();
+                writeln!(file).ok();
             }
         }
 
