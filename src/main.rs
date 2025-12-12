@@ -302,7 +302,7 @@ async fn main() -> Result<()> {
     // Test different sizes: POSITION_SIZE_USDC=500 cargo run (for 500 USDC.e)
     let initial_amount_usdc: f64 = env::var("POSITION_SIZE_USDC")
         .ok()
-        .and_then(|v| v.parse().ok())
+        .and_then(|v| v.trim().parse().ok())
         .unwrap_or(1000.0); // Default to 1000 USDC.e if not set or invalid
     
     // Convert to raw units (USDC.e has 6 decimals)
