@@ -6,14 +6,41 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@v1
         with:
+          toolchain: stable
           components: rustfmt, clippy
-      - uses: actions/cache@v3
+
+      - name: Cache cargo
+        uses: actions/cache@v4
         with:
-          path: ~/.cargo
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo build --release
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ env.RUSTC_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Show toolchain
+        run: |
+          rustc -V
+          cargo -V
+
+      - name: Fetch dependencies
+        run: cargo fetch --locked
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint with Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Build
+        run: cargo build --locked --release
+
+      - name: Test
+        run: cargo test --all --locked --verbose
