@@ -221,6 +221,7 @@ async fn get_pair_reserves(
 ///
 /// Returns: (router_amount_out, calculated_amount_out, difference_percentage)
 #[allow(dead_code)] // Will be used when pair addresses are available
+#[allow(clippy::too_many_arguments)]
 async fn validate_router_quote(
     router_amount_out: U256,
     pair_address: Address,
