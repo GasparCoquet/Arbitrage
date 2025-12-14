@@ -19,8 +19,8 @@ A real-time cryptocurrency arbitrage detection bot for the Avalanche C-Chain. Th
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/GasparCoquet/CleanArbitrage.git
-cd CleanArbitrage
+git clone https://github.com/GasparCoquet/Arbitrage.git
+cd Arbitrage
 ```
 
 2. Build the project:
