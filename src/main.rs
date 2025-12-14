@@ -8,6 +8,49 @@ use std::io::Write;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
+// Minimal ABI for UniswapV2-style router
+abigen!(
+    JoeRouter,
+    r#"[function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)]"#,
+);
+
+abigen!(
+    PangolinRouter,
+    r#"[function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)]"#,
+);
+
+// UniswapV2 Pair ABI for getting reserves
+abigen!(
+    UniswapV2Pair,
+    r#"[
+        {
+            "type": "function",
+            "name": "getReserves",
+            "inputs": [],
+            "outputs": [
+                {"name": "reserve0", "type": "uint112"},
+                {"name": "reserve1", "type": "uint112"},
+                {"name": "blockTimestampLast", "type": "uint32"}
+            ],
+            "stateMutability": "view"
+        },
+        {
+            "type": "function",
+            "name": "token0",
+            "inputs": [],
+            "outputs": [{"name": "", "type": "address"}],
+            "stateMutability": "view"
+        },
+        {
+            "type": "function",
+            "name": "token1",
+            "inputs": [],
+            "outputs": [{"name": "", "type": "address"}],
+            "stateMutability": "view"
+        }
+    ]"#,
+);
+
 /// Calculate gas cost in AVAX for a given gas limit
 /// Formula: gas_cost_avax = gas_limit * gas_price
 /// Where gas_price is fetched dynamically from the blockchain
@@ -195,22 +238,24 @@ fn calculate_xyk_amount_out(
 async fn get_pair_reserves(
     pair_address: Address,
     provider: &Arc<Provider<Http>>,
-    token0: Address,
-    token1: Address,
+    token_in: Address,
+    token_out: Address,
 ) -> Result<(U256, U256)> {
     let pair = UniswapV2Pair::new(pair_address, provider.clone());
     let (reserve0, reserve1, _) = pair.get_reserves().call().await?;
+    let t0 = pair.token_0().call().await?;
+    let t1 = pair.token_1().call().await?;
 
-    // Determine which reserve corresponds to which token
-    // In UniswapV2, token0 < token1 determines the order
-    // U112 types can be converted to U256 directly
-    let (reserve_in, reserve_out) = if token0 < token1 {
-        (U256::from(reserve0), U256::from(reserve1))
+    let r0 = U256::from(reserve0);
+    let r1 = U256::from(reserve1);
+
+    if token_in == t0 && token_out == t1 {
+        Ok((r0, r1))
+    } else if token_in == t1 && token_out == t0 {
+        Ok((r1, r0))
     } else {
-        (U256::from(reserve1), U256::from(reserve0))
-    };
-
-    Ok((reserve_in, reserve_out))
+        anyhow::bail!("Pair tokens mismatch: pair({:?},{:?}) vs requested({:?},{:?})", t0, t1, token_in, token_out);
+    }
 }
 
 /// Validate router quote against our XYK calculation
@@ -268,25 +313,6 @@ const JOE_ROUTER_V1: &str = "0x60aE616a2155Ee3d9A68541Ba4544862310933d4";
 
 // ---------- Pangolin Router ----------
 const PANGOLIN_ROUTER: &str = "0xE54Ca86531e17Ef3616d22Ca28b0D458b6C89106";
-
-// Minimal ABI for UniswapV2-style router
-abigen!(
-    JoeRouter,
-    r#"[function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)]"#,
-);
-
-abigen!(
-    PangolinRouter,
-    r#"[function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)]"#,
-);
-
-// UniswapV2 Pair ABI for getting reserves
-abigen!(
-    UniswapV2Pair,
-    r#"[
-        function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)
-    ]"#,
-);
 
 #[tokio::main]
 async fn main() -> Result<()> {
