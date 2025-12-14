@@ -254,7 +254,13 @@ async fn get_pair_reserves(
     } else if token_in == t1 && token_out == t0 {
         Ok((r1, r0))
     } else {
-        anyhow::bail!("Pair tokens mismatch: pair({:?},{:?}) vs requested({:?},{:?})", t0, t1, token_in, token_out);
+        anyhow::bail!(
+            "Pair tokens mismatch: pair({:?},{:?}) vs requested({:?},{:?})",
+            t0,
+            t1,
+            token_in,
+            token_out
+        );
     }
 }
 
