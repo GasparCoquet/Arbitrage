@@ -12,8 +12,10 @@ A real-time cryptocurrency arbitrage detection bot for the Avalanche C-Chain. Th
 
 ## 📋 Prerequisites
 
-- [Rust](https://www.rust-lang.org/tools/install) (latest stable version)
-- Internet connection for RPC calls to Avalanche network
+- [Rust](https://www.rust-lang.org/tools/install) 1.87.0 (pinned in `rust-toolchain.toml`)
+  - If you don't have it: `rustup toolchain install 1.87.0 --component clippy --component rustfmt`
+- Internet connection for RPC calls to Avalanche C-Chain
+- ~2 GB available disk space for build artifacts
 
 ## 🛠️ Installation
 
@@ -25,8 +27,10 @@ cd Arbitrage
 
 2. Build the project:
 ```bash
-cargo build
+rustup run 1.87.0 cargo build -j 1
 ```
+
+**Note**: The `-j 1` flag limits parallel compilation jobs to reduce memory usage on Windows. Omit it on systems with more than 8 GB RAM.
 
 ## 🎯 Usage
 
@@ -34,24 +38,27 @@ cargo build
 
 Simply run:
 ```bash
+rustup run 1.87.0 cargo run -j 1
+```
+
+Or on Linux/macOS with default Rust in PATH:
+```bash
 cargo run
 ```
 
-Or with custom position size (default: 1000 USDC.e):
-```bash
-POSITION_SIZE_USDC=500 cargo run    # Test with 500 USDC.e
-POSITION_SIZE_USDC=2000 cargo run   # Larger position size
+With custom position size (default: 1000 USDC.e):
+```powershell
+# PowerShell:
+$env:POSITION_SIZE_USDC = "500"
+rustup run 1.87.0 cargo run -j 1
+
+# Bash:
+POSITION_SIZE_USDC=500 rustup run 1.87.0 cargo run -j 1
 ```
 
-Or with custom earnings log limit (default: 1000 entries, 0 = unlimited):
+With custom earnings log limit (default: 1000 entries, 0 = unlimited):
 ```bash
-MAX_EARNINGS_ENTRIES=500 cargo run   # Keep last 500 entries (~250KB file)
-MAX_EARNINGS_ENTRIES=0 cargo run     # Unlimited entries
-```
-
-Or combine both settings:
-```bash
-POSITION_SIZE_USDC=1000 MAX_EARNINGS_ENTRIES=500 cargo run
+POSITION_SIZE_USDC=1000 MAX_EARNINGS_ENTRIES=500 rustup run 1.87.0 cargo run -j 1
 ```
 
 The bot will:
@@ -93,12 +100,11 @@ When an opportunity is found:
    Step 1: Buy 70.386247 WAVAX on Joe (cost: 1000.00 USDC.e)
    Step 2: Sell 70.386247 WAVAX on Pangolin (receive: 1002.50 USDC.e)
    Gross Profit:    2.50 USDC.e
-   DEX Fees:        0.66 USDC.e (calculated dynamically from actual amounts)
    Gas Cost:        0.60 USDC.e (0.030000 AVAX)
-   Net Profit:      1.24 USDC.e
-   Net ROI:         0.124% (threshold: 1.0%)
+   Net Profit:      1.90 USDC.e
+   Net ROI:         0.190% (threshold: 1.0%)
    ✅ Net ROI exceeds minimum threshold (1.0%)
-   Profit in USD:   $1.24
+   Profit in USD:   $1.90
    📊 Total Earnings: $12.45 (15 opportunities)
 ```
 
@@ -138,11 +144,11 @@ taskkill /F /IM arbitrage-bot.exe
    - Tracks both gross and net profit
 
 5. **Profit Calculation**:
-   - Gross Profit = USDC.e received back - initial amount invested
-   - DEX Fees = calculated dynamically from actual swap amounts (0.3% per swap)
-   - Gas Cost = (gas_limit * gas_price) * 2 swaps * AVAX price in USDC.e
-   - Net Profit = Gross Profit - Gas Cost - DEX Fees
-   - Net ROI = Net Profit / Initial Amount
+   - **Gross Profit** = USDC.e received back - initial amount invested
+     - *Already includes all DEX fees and slippage (router quotes are net of AMM fees)*
+   - **Gas Cost** = (gas_limit * gas_price) * 2 swaps * AVAX price in USDC.e
+   - **Net Profit** = Gross Profit - Gas Cost
+   - **Net ROI** = Net Profit / Initial Amount
    - Only alerts if net ROI ≥ 1.0% (MIN_ROI_THRESHOLD)
 
 6. **Earnings Tracking**:
@@ -188,8 +194,7 @@ To modify these values, edit the constants in `src/main.rs`.
 - **Dynamic gas price fetching**: Automatically fetches current gas prices from blockchain
 - **Accurate slippage calculation**: Calculates slippage for both Joe V1 and Pangolin DEXs
 - **Comprehensive profit calculation**: 
-  - Gross profit tracking
-  - Dynamic DEX fee calculation
+  - Gross profit tracking (includes all DEX fees and slippage via router quotes)
   - Gas cost in USDC.e (converted from AVAX price)
   - Net profit after all costs
 - **Multi-DEX price comparison**: Trader Joe V1 vs Pangolin
@@ -200,6 +205,7 @@ To modify these values, edit the constants in `src/main.rs`.
   - `earnings_summary.txt`: Always up-to-date summary with formatted tables
   - `earnings.json`: Machine-readable JSON format
 - **Market statistics tracking**: Price differences, gas costs, check counts
+- **Pinned toolchain**: Rust 1.87.0 for stable builds
 
 ### ⚠️ Limitations
 - **Read-only**: Bot only detects opportunities, doesn't execute trades
@@ -222,14 +228,28 @@ To modify these values, edit the constants in `src/main.rs`.
 ## 🏗️ Project Structure
 
 ```
-CleanArbitrage/
+Arbitrage/
 ├── src/
-│   └── main.rs          # Main bot logic
-├── Cargo.toml          # Dependencies
-└── README.md           # This file
+│   └── main.rs              # Main bot logic
+├── .github/
+│   └── workflows/
+│       └── ci.yml           # GitHub Actions CI/CD
+├── Cargo.toml              # Rust dependencies
+├── rust-toolchain.toml     # Pinned Rust version (1.87.0)
+├── LICENSE                 # MIT License
+└── README.md               # This file
 ```
 
-## 📦 Dependencies
+## � Build Notes
+
+- **Toolchain**: Rust 1.87.0 (pinned in `rust-toolchain.toml`)
+- **Memory usage**: Use `-j 1` flag on Windows or systems with limited RAM
+  - `rustup run 1.87.0 cargo build -j 1` (~1-2 GB RAM required)
+  - Without `-j 1`: May fail with "paging file too small" error
+- **Build time**: First build takes 5-15 minutes; subsequent builds are faster
+- **On Linux/macOS**: Can omit `rustup run 1.87.0` if 1.87.0 is set as default
+
+## �📦 Dependencies
 
 - `ethers` - Ethereum/Avalanche blockchain interaction
 - `tokio` - Async runtime
