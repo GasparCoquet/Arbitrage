@@ -332,30 +332,8 @@ async fn main() -> Result<()> {
     let mut total_opportunities = 0u64;
     let mut total_gross_profit = 0.0;
     let mut total_gas_cost = 0.0;
-    let mut total_dex_fees = 0.0; // Track DEX trading fees separately
     let mut total_net_profit = 0.0;
     let mut last_summary_time = Utc::now();
-
-    // DEX fee rates (0.3% = 0.003 per swap, typically)
-    const DEX_FEE_RATE: f64 = 0.003; // 0.3% per swap
-
-    // Helper function to calculate DEX fees dynamically from actual swap amounts
-    // For a round trip: fee on swap 1 (USDC -> WAVAX) + fee on swap 2 (WAVAX -> USDC)
-    // We calculate based on actual amounts being swapped at each step
-    let calculate_dex_fees = |amount_in_usdc: f64, _wavax_received: f64, usdc_back: f64| -> f64 {
-        // Swap 1: fee on input amount (USDC -> WAVAX)
-        // Fee = 0.3% of the USDC input
-        let fee_swap1 = amount_in_usdc * DEX_FEE_RATE;
-
-        // Swap 2: fee on WAVAX amount being swapped
-        // To get the USDC value of WAVAX before fees on swap 2:
-        // If we received usdc_back after fees, then before fees it was: usdc_back / (1 - fee_rate)
-        // The fee on swap 2 = (usdc_back / (1 - fee_rate)) * fee_rate
-        let wavax_value_before_fees = usdc_back / (1.0 - DEX_FEE_RATE);
-        let fee_swap2 = wavax_value_before_fees * DEX_FEE_RATE;
-
-        fee_swap1 + fee_swap2
-    };
 
     // Market monitoring stats
     let mut total_checks = 0u64;
@@ -432,7 +410,6 @@ async fn main() -> Result<()> {
     let save_earnings_to_file = |opps: u64,
                                  gross: f64,
                                  gas: f64,
-                                 dex_fees: f64,
                                  net: f64,
                                  checks: u64,
                                  price_diffs: &[f64],
@@ -457,7 +434,6 @@ async fn main() -> Result<()> {
             .ok();
             writeln!(file, "Opportunities found:  {}", opps).ok();
             writeln!(file, "Total Gross Profit:   ${:.2} USDC.e", gross).ok();
-            writeln!(file, "Total DEX Fees:       ${:.2} USDC.e", dex_fees).ok();
             writeln!(file, "Total Gas Cost:       ${:.2} USDC.e", gas).ok();
             writeln!(file, "Total Net Profit:     ${:.2} USDC.e", net).ok();
             if opps > 0 {
@@ -538,7 +514,6 @@ async fn main() -> Result<()> {
             .ok();
             writeln!(file, "║  Opportunities found:  {:>35} ║", opps).ok();
             writeln!(file, "║  Total Gross Profit:   ${:>33.2} ║", gross).ok();
-            writeln!(file, "║  Total DEX Fees:       ${:>33.2} ║", dex_fees).ok();
             writeln!(file, "║  Total Gas Cost:       ${:>33.2} ║", gas).ok();
             writeln!(file, "║  Total Net Profit:     ${:>33.2} ║", net).ok();
             if opps > 0 {
@@ -624,7 +599,6 @@ async fn main() -> Result<()> {
   "last_updated": "{}",
   "opportunities_found": {},
                 "total_gross_profit_usdc": {:.2},
-                "total_dex_fees_usdc": {:.2},
                 "total_gas_cost_usdc": {:.2},
                 "total_net_profit_usdc": {:.2},
   "average_per_trade_usdc": {:.2},
@@ -638,7 +612,6 @@ async fn main() -> Result<()> {
                 timestamp,
                 opps,
                 gross,
-                dex_fees,
                 gas,
                 net,
                 if opps > 0 { net / opps as f64 } else { 0.0 },
@@ -656,7 +629,6 @@ async fn main() -> Result<()> {
         total_opportunities,
         total_gross_profit,
         total_gas_cost,
-        total_dex_fees,
         total_net_profit,
         total_checks,
         &total_price_diffs,
@@ -821,23 +793,18 @@ async fn main() -> Result<()> {
                                 Err(_) => total_gas_cost_avax * 20.0, // Fallback: 1 AVAX ≈ 20 USDC
                             };
 
-                        // Unified net profit calculation
+                        // Calculate net profit (gross profit already accounts for all fees via router quotes)
                         let profit_net = usdc_received - initial_amount_usdc - gas_cost_usdc;
                         let roi_net = profit_net / initial_amount_usdc;
                         let roi_net_pct = roi_net * 100.0;
 
-                        // Calculate DEX fees dynamically from actual swap amounts (for display only)
-                        let dex_fees_usdc =
-                            calculate_dex_fees(initial_amount_usdc, joe_out, usdc_received);
                         let gross_profit_usdc = usdc_received - initial_amount_usdc;
 
-                        // Single unified criterion: roi_net >= MIN_ROI_THRESHOLD
                         if roi_net >= MIN_ROI_THRESHOLD {
                             // Update earnings tracking
                             total_opportunities += 1;
                             total_gross_profit += gross_profit_usdc;
                             total_gas_cost += gas_cost_usdc;
-                            total_dex_fees += dex_fees_usdc;
                             total_net_profit += profit_net;
 
                             println!("🚀 ARBITRAGE OPPORTUNITY DETECTED!");
@@ -847,7 +814,6 @@ async fn main() -> Result<()> {
                         "   Step 2: Sell {joe_out:.6} WAVAX on Pangolin (receive: {usdc_received:.2} USDC.e)"
                     );
                             println!("   Gross Profit:    {gross_profit_usdc:.2} USDC.e");
-                            println!("   DEX Fees:        {dex_fees_usdc:.2} USDC.e (calculated dynamically from actual amounts)");
                             println!(
                         "   Gas Cost:        {gas_cost_usdc:.2} USDC.e ({total_gas_cost_avax:.6} AVAX)"
                     );
@@ -868,7 +834,6 @@ async fn main() -> Result<()> {
                                 total_opportunities,
                                 total_gross_profit,
                                 total_gas_cost,
-                                total_dex_fees,
                                 total_net_profit,
                                 total_checks,
                                 &total_price_diffs,
@@ -888,23 +853,18 @@ async fn main() -> Result<()> {
                                 Err(_) => total_gas_cost_avax * 20.0, // Fallback: 1 AVAX ≈ 20 USDC
                             };
 
-                        // Unified net profit calculation
+                        // Calculate net profit (gross profit already accounts for all fees via router quotes)
                         let profit_net = usdc_received - initial_amount_usdc - gas_cost_usdc;
                         let roi_net = profit_net / initial_amount_usdc;
                         let roi_net_pct = roi_net * 100.0;
 
-                        // Calculate DEX fees dynamically from actual swap amounts (for display only)
-                        let dex_fees_usdc =
-                            calculate_dex_fees(initial_amount_usdc, pangolin_out, usdc_received);
                         let gross_profit_usdc = usdc_received - initial_amount_usdc;
 
-                        // Single unified criterion: roi_net >= MIN_ROI_THRESHOLD
                         if roi_net >= MIN_ROI_THRESHOLD {
                             // Update earnings tracking
                             total_opportunities += 1;
                             total_gross_profit += gross_profit_usdc;
                             total_gas_cost += gas_cost_usdc;
-                            total_dex_fees += dex_fees_usdc;
                             total_net_profit += profit_net;
 
                             println!("🚀 ARBITRAGE OPPORTUNITY DETECTED!");
@@ -917,7 +877,6 @@ async fn main() -> Result<()> {
                         "   Step 2: Sell {pangolin_out:.6} WAVAX on Joe (receive: {usdc_received:.2} USDC.e)"
                     );
                             println!("   Gross Profit:    {gross_profit_usdc:.2} USDC.e");
-                            println!("   DEX Fees:        {dex_fees_usdc:.2} USDC.e (calculated dynamically from actual amounts)");
                             println!(
                         "   Gas Cost:        {gas_cost_usdc:.2} USDC.e ({total_gas_cost_avax:.6} AVAX)"
                     );
@@ -938,7 +897,6 @@ async fn main() -> Result<()> {
                                 total_opportunities,
                                 total_gross_profit,
                                 total_gas_cost,
-                                total_dex_fees,
                                 total_net_profit,
                                 total_checks,
                                 &total_price_diffs,
@@ -1065,7 +1023,6 @@ async fn main() -> Result<()> {
                         total_opportunities,
                         total_gross_profit,
                         total_gas_cost,
-                        total_dex_fees,
                         total_net_profit,
                         total_checks,
                         &total_price_diffs,
