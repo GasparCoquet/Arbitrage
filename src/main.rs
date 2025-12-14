@@ -67,13 +67,19 @@ async fn calculate_gas_cost(provider: &Arc<Provider<Http>>, gas_limit: u64) -> R
     Ok(total_cost_avax)
 }
 
-/// Get current AVAX price in USDC.e by querying the DEX
-async fn get_avax_price_in_usdc(
+/// Format U256 amount to f64 for display only
+fn format_units(amount: U256, decimals: u32) -> f64 {
+    amount.as_u128() as f64 / 10f64.powi(decimals as i32)
+}
+
+/// Get current AVAX price in USDC.e (in raw units) by querying the DEX
+/// Returns U256 to preserve precision: 1 WAVAX = ? USDC.e raw units
+async fn get_avax_price_in_usdc_raw(
     _provider: &Arc<Provider<Http>>,
     router: &JoeRouter<Provider<Http>>,
     usdc: Address,
     wavax: Address,
-) -> Result<f64> {
+) -> Result<U256> {
     // Get price by swapping 1 WAVAX to USDC.e
     let one_wavax = U256::from(1_000_000_000_000_000_000u64); // 1 WAVAX (18 decimals)
 
@@ -83,36 +89,31 @@ async fn get_avax_price_in_usdc(
         .await?;
 
     if amounts.len() >= 2 {
-        // amounts[1] is USDC.e received for 1 WAVAX
-        let usdc_received = amounts[1].as_u128() as f64 / 1e6; // USDC.e has 6 decimals
-        Ok(usdc_received)
+        // amounts[1] is USDC.e received for 1 WAVAX (in raw units, 6 decimals)
+        Ok(amounts[1])
     } else {
         anyhow::bail!("Invalid amounts returned from router")
     }
 }
 
-/// Calculate slippage percentage for a trade
+/// Calculate slippage percentage for a trade (keeps amounts in U256)
 /// Slippage = (spot_price - execution_price) / spot_price * 100
 /// Where:
 ///   - spot_price = price for 1 unit (theoretical, linear extrapolation)
 ///   - execution_price = actual price for our trade size
-///
-/// We calculate by comparing:
-///   - What we'd get if price was linear (spot_price * amount)
-///   - What we actually get (execution_price * amount)
 async fn calculate_slippage_joe(
     router: &JoeRouter<Provider<Http>>,
     amount_in: U256,
-    exec_out: f64,
+    exec_out: U256, // Keep in raw units
     token_in: Address,
     token_out: Address,
     decimals_in: u32,
     decimals_out: u32,
 ) -> Result<f64> {
-    // Get spot price: swap 1 USDC.e (small amount for spot price)
-    let one_usdc = U256::from(1_000_000u64); // 1 USDC.e (6 decimals)
+    // Get spot price: swap 1 unit of token_in
+    let one_unit = U256::from(10u128.pow(decimals_in)); // 1 unit in raw form
     let spot_amounts = router
-        .get_amounts_out(one_usdc, vec![token_in, token_out])
+        .get_amounts_out(one_unit, vec![token_in, token_out])
         .call()
         .await?;
 
@@ -120,16 +121,17 @@ async fn calculate_slippage_joe(
         anyhow::bail!("Invalid spot price amounts");
     }
 
-    // Calculate spot price per USDC.e
-    let spot_out_per_usdc = spot_amounts[1].as_u128() as f64 / 10f64.powi(decimals_out as i32);
+    // Calculate spot price per unit
+    let spot_out_per_unit = spot_amounts[1]; // raw units
 
-    // Calculate what we'd get at spot price (linear)
-    let amount_in_usdc = amount_in.as_u128() as f64 / 10f64.powi(decimals_in as i32);
-    let expected_out = spot_out_per_usdc * amount_in_usdc;
+    // Calculate what we'd get at spot price (linear): spot_price * amount_in
+    let expected_out = (spot_out_per_unit * amount_in) / U256::from(10u128.pow(decimals_in));
 
     // Slippage = (expected - actual) / expected * 100
-    // Positive = you get less than expected (normal for large trades)
-    let slippage_pct = ((expected_out - exec_out) / expected_out) * 100.0;
+    // Convert to f64 only for percentage calculation
+    let expected_f64 = format_units(expected_out, decimals_out);
+    let actual_f64 = format_units(exec_out, decimals_out);
+    let slippage_pct = ((expected_f64 - actual_f64) / expected_f64) * 100.0;
 
     Ok(slippage_pct)
 }
@@ -137,16 +139,16 @@ async fn calculate_slippage_joe(
 async fn calculate_slippage_pangolin(
     router: &PangolinRouter<Provider<Http>>,
     amount_in: U256,
-    exec_out: f64,
+    exec_out: U256, // Keep in raw units
     token_in: Address,
     token_out: Address,
     decimals_in: u32,
     decimals_out: u32,
 ) -> Result<f64> {
-    // Get spot price: swap 1 USDC.e (small amount for spot price)
-    let one_usdc = U256::from(1_000_000u64); // 1 USDC.e (6 decimals)
+    // Get spot price: swap 1 unit of token_in
+    let one_unit = U256::from(10u128.pow(decimals_in)); // 1 unit in raw form
     let spot_amounts = router
-        .get_amounts_out(one_usdc, vec![token_in, token_out])
+        .get_amounts_out(one_unit, vec![token_in, token_out])
         .call()
         .await?;
 
@@ -154,16 +156,17 @@ async fn calculate_slippage_pangolin(
         anyhow::bail!("Invalid spot price amounts");
     }
 
-    // Calculate spot price per USDC.e
-    let spot_out_per_usdc = spot_amounts[1].as_u128() as f64 / 10f64.powi(decimals_out as i32);
+    // Calculate spot price per unit
+    let spot_out_per_unit = spot_amounts[1]; // raw units
 
-    // Calculate what we'd get at spot price (linear)
-    let amount_in_usdc = amount_in.as_u128() as f64 / 10f64.powi(decimals_in as i32);
-    let expected_out = spot_out_per_usdc * amount_in_usdc;
+    // Calculate what we'd get at spot price (linear): spot_price * amount_in
+    let expected_out = (spot_out_per_unit * amount_in) / U256::from(10u128.pow(decimals_in));
 
     // Slippage = (expected - actual) / expected * 100
-    // Positive = you get less than expected (normal for large trades)
-    let slippage_pct = ((expected_out - exec_out) / expected_out) * 100.0;
+    // Convert to f64 only for percentage calculation
+    let expected_f64 = format_units(expected_out, decimals_out);
+    let actual_f64 = format_units(exec_out, decimals_out);
+    let slippage_pct = ((expected_f64 - actual_f64) / expected_f64) * 100.0;
 
     Ok(slippage_pct)
 }
@@ -713,19 +716,19 @@ async fn main() -> Result<()> {
                 };
 
                 // ---------- Trader Joe ----------
-                // Quote USDC.e -> WAVAX on Joe
-                let (joe_wavax_out, _joe_slippage) = match joe_router
+                // Quote USDC.e -> WAVAX on Joe (keep in raw U256)
+                let (joe_wavax_out_raw, _joe_slippage) = match joe_router
                     .get_amounts_out(amount_in, vec![usdc, wavax])
                     .call()
                     .await
                 {
                     Ok(amounts) if amounts.len() >= 2 => {
-                        let amount_out = amounts[1].as_u128() as f64 / 1e18; // WAVAX has 18 decimals
-                                                                             // Calculate slippage
+                        let amount_out_raw = amounts[1]; // Keep in raw units (18 decimals)
+                                                         // Calculate slippage
                         let slippage = calculate_slippage_joe(
                             &joe_router,
                             amount_in,
-                            amount_out,
+                            amount_out_raw,
                             usdc,
                             wavax,
                             6,
@@ -733,8 +736,9 @@ async fn main() -> Result<()> {
                         )
                         .await
                         .unwrap_or(0.0);
-                        println!("Joe V1   {:.2} USDC.e -> {amount_out:.6} WAVAX (slippage: {slippage:.3}%)", initial_amount_usdc);
-                        (Some(amount_out), slippage)
+                        let amount_out_display = format_units(amount_out_raw, 18);
+                        println!("Joe V1   {:.2} USDC.e -> {amount_out_display:.6} WAVAX (slippage: {slippage:.3}%)", initial_amount_usdc);
+                        (Some(amount_out_raw), slippage)
                     }
                     Ok(_) => {
                         println!("Joe V1   no path (amounts too short)");
@@ -747,19 +751,19 @@ async fn main() -> Result<()> {
                 };
 
                 // ---------- PANGOLIN ----------
-                // Quote USDC.e -> WAVAX on Pangolin
-                let (pangolin_wavax_out, _pangolin_slippage) = match pangolin_router
+                // Quote USDC.e -> WAVAX on Pangolin (keep in raw U256)
+                let (pangolin_wavax_out_raw, _pangolin_slippage) = match pangolin_router
                     .get_amounts_out(amount_in, vec![usdc, wavax])
                     .call()
                     .await
                 {
                     Ok(amounts) if amounts.len() >= 2 => {
-                        let amount_out = amounts[1].as_u128() as f64 / 1e18; // WAVAX has 18 decimals
-                                                                             // Calculate slippage
+                        let amount_out_raw = amounts[1]; // Keep in raw units (18 decimals)
+                                                         // Calculate slippage
                         let slippage = calculate_slippage_pangolin(
                             &pangolin_router,
                             amount_in,
-                            amount_out,
+                            amount_out_raw,
                             usdc,
                             wavax,
                             6,
@@ -767,8 +771,9 @@ async fn main() -> Result<()> {
                         )
                         .await
                         .unwrap_or(0.0);
-                        println!("Pangolin  {:.2} USDC.e -> {amount_out:.6} WAVAX (slippage: {slippage:.3}%)", initial_amount_usdc);
-                        (Some(amount_out), slippage)
+                        let amount_out_display = format_units(amount_out_raw, 18);
+                        println!("Pangolin  {:.2} USDC.e -> {amount_out_display:.6} WAVAX (slippage: {slippage:.3}%)", initial_amount_usdc);
+                        (Some(amount_out_raw), slippage)
                     }
                     Ok(_) => {
                         println!("Pangolin  no path (amounts too short)");
@@ -781,56 +786,65 @@ async fn main() -> Result<()> {
                 };
 
                 // ---------- ARBITRAGE DETECTION ----------
-                // Calculate actual round-trip arbitrage profit
-                if let (Some(joe_out), Some(pangolin_out)) = (joe_wavax_out, pangolin_wavax_out) {
+                // Calculate actual round-trip arbitrage profit (keep amounts in U256)
+                if let (Some(joe_out_raw), Some(pangolin_out_raw)) = (joe_wavax_out_raw, pangolin_wavax_out_raw) {
                     // Strategy 1: Buy on Joe, Sell on Pangolin
-                    // Step 1: Buy WAVAX on Joe with initial_amount_usdc USDC.e -> get joe_out WAVAX
-                    // Step 2: Sell joe_out WAVAX on Pangolin -> get USDC.e back
-                    let joe_wavax_amount = U256::from((joe_out * 1e18) as u128);
-                    let pangolin_usdc_back = match pangolin_router
-                        .get_amounts_out(joe_wavax_amount, vec![wavax, usdc])
+                    // Step 1: Buy WAVAX on Joe with initial_amount_usdc USDC.e -> get joe_out_raw WAVAX
+                    // Step 2: Sell joe_out_raw WAVAX on Pangolin -> get USDC.e back (in raw units)
+                    let pangolin_usdc_back_raw = match pangolin_router
+                        .get_amounts_out(joe_out_raw, vec![wavax, usdc])
                         .call()
                         .await
                     {
                         Ok(amounts) if amounts.len() >= 2 => {
-                            Some(amounts[1].as_u128() as f64 / 1e6) // USDC.e has 6 decimals
+                            Some(amounts[1]) // Keep in raw units (6 decimals)
                         }
                         _ => None,
                     };
 
                     // Strategy 2: Buy on Pangolin, Sell on Joe
-                    // Step 1: Buy WAVAX on Pangolin with initial_amount_usdc USDC.e -> get pangolin_out WAVAX
-                    // Step 2: Sell pangolin_out WAVAX on Joe -> get USDC.e back
-                    let pangolin_wavax_amount = U256::from((pangolin_out * 1e18) as u128);
-                    let joe_usdc_back = match joe_router
-                        .get_amounts_out(pangolin_wavax_amount, vec![wavax, usdc])
+                    // Step 1: Buy WAVAX on Pangolin with initial_amount_usdc USDC.e -> get pangolin_out_raw WAVAX
+                    // Step 2: Sell pangolin_out_raw WAVAX on Joe -> get USDC.e back (in raw units)
+                    let joe_usdc_back_raw = match joe_router
+                        .get_amounts_out(pangolin_out_raw, vec![wavax, usdc])
                         .call()
                         .await
                     {
                         Ok(amounts) if amounts.len() >= 2 => {
-                            Some(amounts[1].as_u128() as f64 / 1e6) // USDC.e has 6 decimals
+                            Some(amounts[1]) // Keep in raw units (6 decimals)
                         }
                         _ => None,
                     };
 
-                    // Calculate profits for both strategies
-                    if let Some(usdc_received) = pangolin_usdc_back {
-                        // Strategy 1: Buy on Joe, Sell on Pangolin
-                        let total_gas_cost_avax = gas_cost_avax * 2.0; // Two swaps
-                                                                       // Get AVAX price to convert gas cost to USDC.e
-                        let gas_cost_usdc =
-                            match get_avax_price_in_usdc(&provider, &joe_router, usdc, wavax).await
-                            {
-                                Ok(avax_price) => total_gas_cost_avax * avax_price,
-                                Err(_) => total_gas_cost_avax * 20.0, // Fallback: 1 AVAX ≈ 20 USDC
-                            };
+                    // Get AVAX price in raw units (for gas cost conversion)
+                    let avax_price_raw = match get_avax_price_in_usdc_raw(&provider, &joe_router, usdc, wavax).await
+                    {
+                        Ok(price) => price,
+                        Err(_) => U256::from(20_000_000u64), // Fallback: 1 AVAX ≈ 20 USDC (in raw units)
+                    };
 
-                        // Calculate net profit (gross profit already accounts for all fees via router quotes)
-                        let profit_net = usdc_received - initial_amount_usdc - gas_cost_usdc;
+                    // Calculate profits for both strategies
+                    if let Some(usdc_received_raw) = pangolin_usdc_back_raw {
+                        // Strategy 1: Buy on Joe, Sell on Pangolin
+                        let total_gas_cost_avax = gas_cost_avax * 2.0; // Two swaps (in AVAX as f64)
+                        
+                        // Convert gas cost to raw USDC units: avax_amount * avax_price
+                        let gas_cost_raw = U256::from((total_gas_cost_avax * 1e18) as u128) 
+                            * avax_price_raw / U256::from(1_000_000_000_000_000_000u64);
+
+                        // Calculate net profit: received - initial - gas_cost (all in raw units)
+                        let profit_net_raw = if usdc_received_raw >= amount_in + gas_cost_raw {
+                            usdc_received_raw - amount_in - gas_cost_raw
+                        } else {
+                            U256::zero()
+                        };
+
+                        // Convert to f64 for display and comparison
+                        let profit_net = format_units(profit_net_raw, 6);
                         let roi_net = profit_net / initial_amount_usdc;
                         let roi_net_pct = roi_net * 100.0;
-
-                        let gross_profit_usdc = usdc_received - initial_amount_usdc;
+                        let gross_profit_usdc = format_units(usdc_received_raw - amount_in, 6);
+                        let gas_cost_usdc = format_units(gas_cost_raw, 6);
 
                         if roi_net >= MIN_ROI_THRESHOLD {
                             // Update earnings tracking
@@ -839,16 +853,14 @@ async fn main() -> Result<()> {
                             total_gas_cost += gas_cost_usdc;
                             total_net_profit += profit_net;
 
+                            let joe_out_display = format_units(joe_out_raw, 18);
                             println!("🚀 ARBITRAGE OPPORTUNITY DETECTED!");
                             println!("   Strategy: Buy WAVAX on Joe, Sell WAVAX on Pangolin");
-                            println!("   Step 1: Buy {joe_out:.6} WAVAX on Joe (cost: {initial_amount_usdc:.2} USDC.e)");
-                            println!(
-                        "   Step 2: Sell {joe_out:.6} WAVAX on Pangolin (receive: {usdc_received:.2} USDC.e)"
-                    );
+                            println!("   Step 1: Buy {joe_out_display:.6} WAVAX on Joe (cost: {initial_amount_usdc:.2} USDC.e)");
+                            let usdc_received_display = format_units(usdc_received_raw, 6);
+                            println!("   Step 2: Sell {joe_out_display:.6} WAVAX on Pangolin (receive: {usdc_received_display:.2} USDC.e)");
                             println!("   Gross Profit:    {gross_profit_usdc:.2} USDC.e");
-                            println!(
-                        "   Gas Cost:        {gas_cost_usdc:.2} USDC.e ({total_gas_cost_avax:.6} AVAX)"
-                    );
+                            println!("   Gas Cost:        {gas_cost_usdc:.2} USDC.e ({total_gas_cost_avax:.6} AVAX)");
                             println!("   Net Profit:      {profit_net:.2} USDC.e");
                             println!(
                                 "   Net ROI:         {roi_net_pct:.3}% (threshold: {:.1}%)",
@@ -874,23 +886,27 @@ async fn main() -> Result<()> {
                         }
                     }
 
-                    if let Some(usdc_received) = joe_usdc_back {
+                    if let Some(usdc_received_raw) = joe_usdc_back_raw {
                         // Strategy 2: Buy on Pangolin, Sell on Joe
-                        let total_gas_cost_avax = gas_cost_avax * 2.0; // Two swaps
-                                                                       // Get AVAX price to convert gas cost to USDC.e
-                        let gas_cost_usdc =
-                            match get_avax_price_in_usdc(&provider, &joe_router, usdc, wavax).await
-                            {
-                                Ok(avax_price) => total_gas_cost_avax * avax_price,
-                                Err(_) => total_gas_cost_avax * 20.0, // Fallback: 1 AVAX ≈ 20 USDC
-                            };
+                        let total_gas_cost_avax = gas_cost_avax * 2.0; // Two swaps (in AVAX as f64)
+                        
+                        // Convert gas cost to raw USDC units: avax_amount * avax_price
+                        let gas_cost_raw = U256::from((total_gas_cost_avax * 1e18) as u128) 
+                            * avax_price_raw / U256::from(1_000_000_000_000_000_000u64);
 
-                        // Calculate net profit (gross profit already accounts for all fees via router quotes)
-                        let profit_net = usdc_received - initial_amount_usdc - gas_cost_usdc;
+                        // Calculate net profit: received - initial - gas_cost (all in raw units)
+                        let profit_net_raw = if usdc_received_raw >= amount_in + gas_cost_raw {
+                            usdc_received_raw - amount_in - gas_cost_raw
+                        } else {
+                            U256::zero()
+                        };
+
+                        // Convert to f64 for display and comparison
+                        let profit_net = format_units(profit_net_raw, 6);
                         let roi_net = profit_net / initial_amount_usdc;
                         let roi_net_pct = roi_net * 100.0;
-
-                        let gross_profit_usdc = usdc_received - initial_amount_usdc;
+                        let gross_profit_usdc = format_units(usdc_received_raw - amount_in, 6);
+                        let gas_cost_usdc = format_units(gas_cost_raw, 6);
 
                         if roi_net >= MIN_ROI_THRESHOLD {
                             // Update earnings tracking
@@ -899,19 +915,14 @@ async fn main() -> Result<()> {
                             total_gas_cost += gas_cost_usdc;
                             total_net_profit += profit_net;
 
+                            let pangolin_out_display = format_units(pangolin_out_raw, 18);
                             println!("🚀 ARBITRAGE OPPORTUNITY DETECTED!");
                             println!("   Strategy: Buy WAVAX on Pangolin, Sell WAVAX on Joe");
-                            println!(
-                        "   Step 1: Buy {pangolin_out:.6} WAVAX on Pangolin (cost: {:.2} USDC.e)",
-                        initial_amount_usdc
-                    );
-                            println!(
-                        "   Step 2: Sell {pangolin_out:.6} WAVAX on Joe (receive: {usdc_received:.2} USDC.e)"
-                    );
+                            println!("   Step 1: Buy {pangolin_out_display:.6} WAVAX on Pangolin (cost: {initial_amount_usdc:.2} USDC.e)");
+                            let usdc_received_display = format_units(usdc_received_raw, 6);
+                            println!("   Step 2: Sell {pangolin_out_display:.6} WAVAX on Joe (receive: {usdc_received_display:.2} USDC.e)");
                             println!("   Gross Profit:    {gross_profit_usdc:.2} USDC.e");
-                            println!(
-                        "   Gas Cost:        {gas_cost_usdc:.2} USDC.e ({total_gas_cost_avax:.6} AVAX)"
-                    );
+                            println!("   Gas Cost:        {gas_cost_usdc:.2} USDC.e ({total_gas_cost_avax:.6} AVAX)");
                             println!("   Net Profit:      {profit_net:.2} USDC.e");
                             println!(
                                 "   Net ROI:         {roi_net_pct:.3}% (threshold: {:.1}%)",
@@ -938,113 +949,87 @@ async fn main() -> Result<()> {
                     }
 
                     // Show status if no profitable arbitrage found
-                    // Get AVAX price for accurate calculations
-                    let avax_price = get_avax_price_in_usdc(&provider, &joe_router, usdc, wavax)
-                        .await
-                        .unwrap_or(20.0); // Fallback
+                    // Calculate price difference between the two DEXs
+                    let joe_out_display = format_units(joe_out_raw, 18);
+                    let pangolin_out_display = format_units(pangolin_out_raw, 18);
+                    
+                    let total_gas_cost_avax = gas_cost_avax * 2.0; // Two swaps
+                    let avax_price_display = format_units(avax_price_raw, 6);
+                    let total_gas_cost_usdc_display = total_gas_cost_avax * avax_price_display;
 
-                    // Calculate gas cost in USDC.e: gas_used * gas_price * avax_price_in_usdc
-                    // Where:
-                    //   - gas_used = GAS_LIMIT_PER_SWAP * 2 (for 2 swaps)
-                    //   - gas_price = fetched dynamically from blockchain (in Wei, converted to AVAX)
-                    //   - avax_price_in_usdc = current AVAX price in USDC.e
-                    // Formula: gas_cost_usdc = gas_used * gas_price * avax_price_in_usdc
-                    //          = (gas_limit * gas_price) * 2 * avax_price
-                    let total_gas_cost_usdc = gas_cost_avax * 2.0 * avax_price;
+                    // Calculate price difference percentage
+                    let price_diff = (joe_out_display - pangolin_out_display).abs();
+                    let price_diff_pct = if (joe_out_display + pangolin_out_display) > 0.0 {
+                        (price_diff / ((joe_out_display + pangolin_out_display) / 2.0)) * 100.0
+                    } else {
+                        0.0
+                    };
 
                     // Always log gas cost, even if very small (use more decimals for small values)
-                    if total_gas_cost_usdc < 0.01 {
-                        println!("   Gas cost (2 swaps): {total_gas_cost_usdc:.8} USDC.e (formula: gas_limit * gas_price * 2 * avax_price)");
+                    if total_gas_cost_usdc_display < 0.01 {
+                        println!("   Gas cost (2 swaps): {total_gas_cost_usdc_display:.8} USDC.e (formula: gas_limit * gas_price * 2 * avax_price)");
                     } else {
-                        println!("   Gas cost (2 swaps): {total_gas_cost_usdc:.6} USDC.e (formula: gas_limit * gas_price * 2 * avax_price)");
+                        println!("   Gas cost (2 swaps): {total_gas_cost_usdc_display:.6} USDC.e (formula: gas_limit * gas_price * 2 * avax_price)");
                     }
 
                     // Track market stats
                     total_checks += 1;
-                    let price_diff = (joe_out - pangolin_out).abs();
-                    let price_diff_pct = if (joe_out + pangolin_out) > 0.0 {
-                        (price_diff / ((joe_out + pangolin_out) / 2.0)) * 100.0
-                    } else {
-                        0.0
-                    };
                     total_price_diffs.push(price_diff_pct);
-                    total_gas_costs.push(total_gas_cost_usdc);
+                    total_gas_costs.push(total_gas_cost_usdc_display);
 
+                    // Check if we would have found any profit
                     let mut found_profit = false;
-                    if let Some(usdc_received) = pangolin_usdc_back {
-                        if (usdc_received - initial_amount_usdc - total_gas_cost_usdc) > 0.0 {
+                    if let Some(usdc_received_raw) = pangolin_usdc_back_raw {
+                        let profit_raw = if usdc_received_raw > amount_in {
+                            usdc_received_raw - amount_in
+                        } else {
+                            U256::zero()
+                        };
+                        if profit_raw > avax_price_raw.saturating_mul(U256::from(100u64)) / U256::from(1_000_000u64) {
+                            // Profit > gas cost
                             found_profit = true;
                         }
                     }
-                    if let Some(usdc_received) = joe_usdc_back {
-                        if (usdc_received - initial_amount_usdc - total_gas_cost_usdc) > 0.0 {
+                    if let Some(usdc_received_raw) = joe_usdc_back_raw {
+                        let profit_raw = if usdc_received_raw > amount_in {
+                            usdc_received_raw - amount_in
+                        } else {
+                            U256::zero()
+                        };
+                        if profit_raw > avax_price_raw.saturating_mul(U256::from(100u64)) / U256::from(1_000_000u64) {
+                            // Profit > gas cost
                             found_profit = true;
                         }
                     }
 
                     if !found_profit {
-                        // Calculate actual returns and show what's needed
-                        let min_profit_needed = total_gas_cost_usdc + 0.01; // Add small buffer
+                        // Show why no arbitrage is profitable
+                        let min_profit_needed_display = total_gas_cost_usdc_display + 0.01;
 
-                        // Calculate exact minimum price difference needed for profitability
-                        // Based on current gas costs and observed slippage from round-trip
-                        let min_price_diff_pct = if (joe_out + pangolin_out) > 0.0 {
-                            // Calculate based on actual round-trip performance
-                            let best_return = pangolin_usdc_back
-                                .unwrap_or(0.0)
-                                .max(joe_usdc_back.unwrap_or(0.0));
-
-                            if best_return > 0.0 {
-                                // Calculate slippage factor from actual round-trip
-                                let slippage_factor =
-                                    (initial_amount_usdc - best_return) / initial_amount_usdc;
-                                // Need: min_profit_needed + current_loss
-                                let total_needed =
-                                    min_profit_needed + (initial_amount_usdc - best_return);
-                                // Price diff needed = total_needed / (1 - slippage_factor)
-                                // Then convert to percentage
-                                let min_price_diff =
-                                    total_needed / (1.0 - slippage_factor.max(0.01));
-                                (min_price_diff / initial_amount_usdc) * 100.0
-                            } else {
-                                // Fallback: estimate based on gas cost
-                                (min_profit_needed / initial_amount_usdc) * 100.0 * 2.0
-                            }
-                        } else {
-                            0.0
-                        };
-
-                        if let Some(usdc_received) = pangolin_usdc_back {
-                            let loss = initial_amount_usdc - usdc_received;
-                            let additional_needed = min_profit_needed + loss;
+                        if let Some(usdc_received_raw) = pangolin_usdc_back_raw {
+                            let usdc_received_display = format_units(usdc_received_raw, 6);
+                            let loss_display = initial_amount_usdc - usdc_received_display;
+                            let additional_needed = min_profit_needed_display + loss_display;
                             println!("   No profitable arbitrage (current price diff: {price_diff_pct:.2}%)");
                             println!("   Strategy 1: Buy on Joe, Sell on Pangolin");
-                            println!(
-                        "     - Receive back: {usdc_received:.2} USDC.e (loss: {loss:.2} USDC.e)"
-                    );
-                            println!("     - Gas cost: {total_gas_cost_usdc:.2} USDC.e");
-                            println!(
-                                "     - Need {:.2} USDC.e more profit to break even",
-                                additional_needed
-                            );
+                            println!("     - Receive back: {usdc_received_display:.2} USDC.e (loss: {loss_display:.2} USDC.e)");
+                            println!("     - Gas cost: {total_gas_cost_usdc_display:.2} USDC.e");
+                            println!("     - Need {additional_needed:.2} USDC.e more profit to break even");
                         }
 
-                        if let Some(usdc_received) = joe_usdc_back {
-                            let loss = initial_amount_usdc - usdc_received;
-                            let additional_needed = min_profit_needed + loss;
+                        if let Some(usdc_received_raw) = joe_usdc_back_raw {
+                            let usdc_received_display = format_units(usdc_received_raw, 6);
+                            let loss_display = initial_amount_usdc - usdc_received_display;
+                            let additional_needed = min_profit_needed_display + loss_display;
                             println!("   Strategy 2: Buy on Pangolin, Sell on Joe");
-                            println!(
-                        "     - Receive back: {usdc_received:.2} USDC.e (loss: {loss:.2} USDC.e)"
-                    );
-                            println!("     - Gas cost: {total_gas_cost_usdc:.2} USDC.e");
-                            println!(
-                                "     - Need {:.2} USDC.e more profit to break even",
-                                additional_needed
-                            );
+                            println!("     - Receive back: {usdc_received_display:.2} USDC.e (loss: {loss_display:.2} USDC.e)");
+                            println!("     - Gas cost: {total_gas_cost_usdc_display:.2} USDC.e");
+                            println!("     - Need {additional_needed:.2} USDC.e more profit to break even");
                         }
 
-                        // Show calculated minimum price difference needed
-                        println!("   💡 Minimum price diff needed: {min_price_diff_pct:.2}% (based on current gas: {total_gas_cost_usdc:.2} USDC.e)");
+                        // Minimum price difference needed
+                        let min_price_diff_needed = ((min_profit_needed_display * 2.0) / (initial_amount_usdc * 2.0)) * 100.0;
+                        println!("   💡 Minimum price diff needed: {min_price_diff_needed:.2}% (based on current gas: {total_gas_cost_usdc_display:.2} USDC.e)");
                     }
                 }
 
