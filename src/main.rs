@@ -787,7 +787,9 @@ async fn main() -> Result<()> {
 
                 // ---------- ARBITRAGE DETECTION ----------
                 // Calculate actual round-trip arbitrage profit (keep amounts in U256)
-                if let (Some(joe_out_raw), Some(pangolin_out_raw)) = (joe_wavax_out_raw, pangolin_wavax_out_raw) {
+                if let (Some(joe_out_raw), Some(pangolin_out_raw)) =
+                    (joe_wavax_out_raw, pangolin_wavax_out_raw)
+                {
                     // Strategy 1: Buy on Joe, Sell on Pangolin
                     // Step 1: Buy WAVAX on Joe with initial_amount_usdc USDC.e -> get joe_out_raw WAVAX
                     // Step 2: Sell joe_out_raw WAVAX on Pangolin -> get USDC.e back (in raw units)
@@ -817,20 +819,22 @@ async fn main() -> Result<()> {
                     };
 
                     // Get AVAX price in raw units (for gas cost conversion)
-                    let avax_price_raw = match get_avax_price_in_usdc_raw(&provider, &joe_router, usdc, wavax).await
-                    {
-                        Ok(price) => price,
-                        Err(_) => U256::from(20_000_000u64), // Fallback: 1 AVAX ≈ 20 USDC (in raw units)
-                    };
+                    let avax_price_raw =
+                        match get_avax_price_in_usdc_raw(&provider, &joe_router, usdc, wavax).await
+                        {
+                            Ok(price) => price,
+                            Err(_) => U256::from(20_000_000u64), // Fallback: 1 AVAX ≈ 20 USDC (in raw units)
+                        };
 
                     // Calculate profits for both strategies
                     if let Some(usdc_received_raw) = pangolin_usdc_back_raw {
                         // Strategy 1: Buy on Joe, Sell on Pangolin
                         let total_gas_cost_avax = gas_cost_avax * 2.0; // Two swaps (in AVAX as f64)
-                        
+
                         // Convert gas cost to raw USDC units: avax_amount * avax_price
-                        let gas_cost_raw = U256::from((total_gas_cost_avax * 1e18) as u128) 
-                            * avax_price_raw / U256::from(1_000_000_000_000_000_000u64);
+                        let gas_cost_raw = U256::from((total_gas_cost_avax * 1e18) as u128)
+                            * avax_price_raw
+                            / U256::from(1_000_000_000_000_000_000u64);
 
                         // Calculate net profit: received - initial - gas_cost (all in raw units)
                         let profit_net_raw = if usdc_received_raw >= amount_in + gas_cost_raw {
@@ -889,10 +893,11 @@ async fn main() -> Result<()> {
                     if let Some(usdc_received_raw) = joe_usdc_back_raw {
                         // Strategy 2: Buy on Pangolin, Sell on Joe
                         let total_gas_cost_avax = gas_cost_avax * 2.0; // Two swaps (in AVAX as f64)
-                        
+
                         // Convert gas cost to raw USDC units: avax_amount * avax_price
-                        let gas_cost_raw = U256::from((total_gas_cost_avax * 1e18) as u128) 
-                            * avax_price_raw / U256::from(1_000_000_000_000_000_000u64);
+                        let gas_cost_raw = U256::from((total_gas_cost_avax * 1e18) as u128)
+                            * avax_price_raw
+                            / U256::from(1_000_000_000_000_000_000u64);
 
                         // Calculate net profit: received - initial - gas_cost (all in raw units)
                         let profit_net_raw = if usdc_received_raw >= amount_in + gas_cost_raw {
@@ -952,7 +957,7 @@ async fn main() -> Result<()> {
                     // Calculate price difference between the two DEXs
                     let joe_out_display = format_units(joe_out_raw, 18);
                     let pangolin_out_display = format_units(pangolin_out_raw, 18);
-                    
+
                     let total_gas_cost_avax = gas_cost_avax * 2.0; // Two swaps
                     let avax_price_display = format_units(avax_price_raw, 6);
                     let total_gas_cost_usdc_display = total_gas_cost_avax * avax_price_display;
@@ -985,7 +990,10 @@ async fn main() -> Result<()> {
                         } else {
                             U256::zero()
                         };
-                        if profit_raw > avax_price_raw.saturating_mul(U256::from(100u64)) / U256::from(1_000_000u64) {
+                        if profit_raw
+                            > avax_price_raw.saturating_mul(U256::from(100u64))
+                                / U256::from(1_000_000u64)
+                        {
                             // Profit > gas cost
                             found_profit = true;
                         }
@@ -996,7 +1004,10 @@ async fn main() -> Result<()> {
                         } else {
                             U256::zero()
                         };
-                        if profit_raw > avax_price_raw.saturating_mul(U256::from(100u64)) / U256::from(1_000_000u64) {
+                        if profit_raw
+                            > avax_price_raw.saturating_mul(U256::from(100u64))
+                                / U256::from(1_000_000u64)
+                        {
                             // Profit > gas cost
                             found_profit = true;
                         }
@@ -1028,7 +1039,9 @@ async fn main() -> Result<()> {
                         }
 
                         // Minimum price difference needed
-                        let min_price_diff_needed = ((min_profit_needed_display * 2.0) / (initial_amount_usdc * 2.0)) * 100.0;
+                        let min_price_diff_needed = ((min_profit_needed_display * 2.0)
+                            / (initial_amount_usdc * 2.0))
+                            * 100.0;
                         println!("   💡 Minimum price diff needed: {min_price_diff_needed:.2}% (based on current gas: {total_gas_cost_usdc_display:.2} USDC.e)");
                     }
                 }
