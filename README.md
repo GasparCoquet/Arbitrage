@@ -223,18 +223,6 @@ To modify these values, edit the constants in `src/main.rs`.
 - **Single pair**: Currently only monitors USDC.e/WAVAX
 - **Price differences**: Typically need 3-5%+ price difference to be profitable after gas
 
-## 🔮 Future Improvements
-
-- [ ] Automatic trade execution
-- [ ] Wallet integration and transaction signing
-- [ ] Support for multiple token pairs
-- [ ] Dynamic gas price estimation
-- [ ] Slippage protection
-- [ ] Configurable minimum profit thresholds
-- [ ] Historical data logging
-- [ ] Web interface/dashboard
-- [ ] Support for additional DEXs
-
 ## 🏗️ Project Structure
 
 ```
