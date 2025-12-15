@@ -82,15 +82,22 @@ Position size: 1000.00 USDC.e (configure via POSITION_SIZE_USDC env var)
 
 🔍 Watching for new blocks (starting from block #12345678)...
 [11:53:00] Block #12345679 detected
-   Current gas cost per swap: 0.005670 AVAX (gas_limit: 250000, gas_price: dynamic)
-Joe V1   1000.00 USDC.e -> 70.386247 WAVAX (slippage: 2.340%)
-Pangolin  1000.00 USDC.e -> 68.667390 WAVAX (slippage: 2.410%)
-   No profitable arbitrage (current price diff: 2.47%)
+   Current gas cost per swap: 0.000038 AVAX (gas_limit: 250000, gas_price: dynamic)
+Joe V1   1000.00 USDC.e -> 76.399139 WAVAX (slippage: 0.393%)
+Pangolin  1000.00 USDC.e -> 74.447866 WAVAX (slippage: 2.929%)
+   Gas cost (2 swaps): 0.00098 USDC.e (formula: gas_limit * gas_price * 2 * avax_price)
+   No profitable arbitrage (current price diff: 2.59%)
    Strategy 1: Buy on Joe, Sell on Pangolin
-     - Receive back: 998.50 USDC.e (loss: 1.50 USDC.e)
-     - Gas cost: 0.60 USDC.e
-     - Need 2.11 USDC.e more profit to break even
-   💡 Minimum price diff needed: 3.21% (based on current gas: 0.60 USDC.e)
+     - Receive back: 961.32 USDC.e (loss: 38.68 USDC.e)
+     - Gas cost: 0.00098 USDC.e
+     - Total deficit: 38.68 USDC.e
+     - Need 38.69 USDC.e more to be profitable (includes $0.01 min profit)
+   Strategy 2: Buy on Pangolin, Sell on Joe
+     - Receive back: 961.14 USDC.e (loss: 38.86 USDC.e)
+     - Gas cost: 0.00098 USDC.e
+     - Total deficit: 38.86 USDC.e
+     - Need 38.87 USDC.e more to be profitable (includes $0.01 min profit)
+   💡 Minimum price diff needed: 3.869% (to recover $38.69 loss + gas + profit)
 ```
 
 When an opportunity is found:
@@ -146,9 +153,12 @@ taskkill /F /IM arbitrage-bot.exe
 5. **Profit Calculation**:
    - **Gross Profit** = USDC.e received back - initial amount invested
      - *Already includes all DEX fees and slippage (router quotes are net of AMM fees)*
-   - **Gas Cost** = (gas_limit * gas_price) * 2 swaps * AVAX price in USDC.e
+   - **Total Deficit** = Loss from trade + Gas cost
+     - Shows combined impact of slippage loss and transaction fees
    - **Net Profit** = Gross Profit - Gas Cost
    - **Net ROI** = Net Profit / Initial Amount
+   - **Minimum Price Diff Needed** = (Total Deficit + Min Profit Threshold) / Initial Amount
+     - Tells you what price difference between DEXs is needed to be profitable
    - Only alerts if net ROI ≥ 1.0% (MIN_ROI_THRESHOLD)
 
 6. **Earnings Tracking**:

@@ -832,8 +832,9 @@ async fn main() -> Result<()> {
                         let total_gas_cost_avax = gas_cost_avax * 2.0; // Two swaps (in AVAX as f64)
 
                         // Convert gas cost to raw USDC units: avax_amount * avax_price
+                        // Use saturating multiplication to prevent overflow
                         let gas_cost_raw = U256::from((total_gas_cost_avax * 1e18) as u128)
-                            * avax_price_raw
+                            .saturating_mul(avax_price_raw)
                             / U256::from(1_000_000_000_000_000_000u64);
 
                         // Calculate net profit: received - initial - gas_cost (all in raw units)
@@ -847,7 +848,7 @@ async fn main() -> Result<()> {
                         let profit_net = format_units(profit_net_raw, 6);
                         let roi_net = profit_net / initial_amount_usdc;
                         let roi_net_pct = roi_net * 100.0;
-                        let gross_profit_usdc = format_units(usdc_received_raw - amount_in, 6);
+                        let gross_profit_usdc = format_units(usdc_received_raw.saturating_sub(amount_in), 6);
                         let gas_cost_usdc = format_units(gas_cost_raw, 6);
 
                         if roi_net >= MIN_ROI_THRESHOLD {
@@ -895,8 +896,9 @@ async fn main() -> Result<()> {
                         let total_gas_cost_avax = gas_cost_avax * 2.0; // Two swaps (in AVAX as f64)
 
                         // Convert gas cost to raw USDC units: avax_amount * avax_price
+                        // Use saturating multiplication to prevent overflow
                         let gas_cost_raw = U256::from((total_gas_cost_avax * 1e18) as u128)
-                            * avax_price_raw
+                            .saturating_mul(avax_price_raw)
                             / U256::from(1_000_000_000_000_000_000u64);
 
                         // Calculate net profit: received - initial - gas_cost (all in raw units)
@@ -910,7 +912,7 @@ async fn main() -> Result<()> {
                         let profit_net = format_units(profit_net_raw, 6);
                         let roi_net = profit_net / initial_amount_usdc;
                         let roi_net_pct = roi_net * 100.0;
-                        let gross_profit_usdc = format_units(usdc_received_raw - amount_in, 6);
+                        let gross_profit_usdc = format_units(usdc_received_raw.saturating_sub(amount_in), 6);
                         let gas_cost_usdc = format_units(gas_cost_raw, 6);
 
                         if roi_net >= MIN_ROI_THRESHOLD {
@@ -959,7 +961,9 @@ async fn main() -> Result<()> {
                     let pangolin_out_display = format_units(pangolin_out_raw, 18);
 
                     let total_gas_cost_avax = gas_cost_avax * 2.0; // Two swaps
-                    let avax_price_display = format_units(avax_price_raw, 6);
+                    // avax_price_raw is already in USDC units (6 decimals), so we need to convert it properly
+                    // Example: avax_price_raw = 25_950_000 means 25.95 USDC
+                    let avax_price_display = (avax_price_raw.as_u128() as f64) / 1_000_000.0;
                     let total_gas_cost_usdc_display = total_gas_cost_avax * avax_price_display;
 
                     // Calculate price difference percentage
@@ -1015,34 +1019,42 @@ async fn main() -> Result<()> {
 
                     if !found_profit {
                         // Show why no arbitrage is profitable
-                        let min_profit_needed_display = total_gas_cost_usdc_display + 0.01;
+                        let min_profit_threshold = 0.01; // Minimum profit we want to make (1 cent)
 
                         if let Some(usdc_received_raw) = pangolin_usdc_back_raw {
                             let usdc_received_display = format_units(usdc_received_raw, 6);
                             let loss_display = initial_amount_usdc - usdc_received_display;
-                            let additional_needed = min_profit_needed_display + loss_display;
+                            let total_deficit = loss_display + total_gas_cost_usdc_display;
+                            let needed_for_profit = total_deficit + min_profit_threshold;
                             println!("   No profitable arbitrage (current price diff: {price_diff_pct:.2}%)");
                             println!("   Strategy 1: Buy on Joe, Sell on Pangolin");
                             println!("     - Receive back: {usdc_received_display:.2} USDC.e (loss: {loss_display:.2} USDC.e)");
-                            println!("     - Gas cost: {total_gas_cost_usdc_display:.2} USDC.e");
-                            println!("     - Need {additional_needed:.2} USDC.e more profit to break even");
+                            println!("     - Gas cost: {total_gas_cost_usdc_display:.5} USDC.e");
+                            println!("     - Total deficit: {total_deficit:.2} USDC.e");
+                            println!("     - Need {needed_for_profit:.2} USDC.e more to be profitable (includes ${min_profit_threshold:.2} min profit)");
                         }
 
                         if let Some(usdc_received_raw) = joe_usdc_back_raw {
                             let usdc_received_display = format_units(usdc_received_raw, 6);
                             let loss_display = initial_amount_usdc - usdc_received_display;
-                            let additional_needed = min_profit_needed_display + loss_display;
+                            let total_deficit = loss_display + total_gas_cost_usdc_display;
+                            let needed_for_profit = total_deficit + min_profit_threshold;
                             println!("   Strategy 2: Buy on Pangolin, Sell on Joe");
                             println!("     - Receive back: {usdc_received_display:.2} USDC.e (loss: {loss_display:.2} USDC.e)");
-                            println!("     - Gas cost: {total_gas_cost_usdc_display:.2} USDC.e");
-                            println!("     - Need {additional_needed:.2} USDC.e more profit to break even");
+                            println!("     - Gas cost: {total_gas_cost_usdc_display:.5} USDC.e");
+                            println!("     - Total deficit: {total_deficit:.2} USDC.e");
+                            println!("     - Need {needed_for_profit:.2} USDC.e more to be profitable (includes ${min_profit_threshold:.2} min profit)");
                         }
 
-                        // Minimum price difference needed
-                        let min_price_diff_needed = ((min_profit_needed_display * 2.0)
-                            / (initial_amount_usdc * 2.0))
-                            * 100.0;
-                        println!("   💡 Minimum price diff needed: {min_price_diff_needed:.2}% (based on current gas: {total_gas_cost_usdc_display:.2} USDC.e)");
+                        // Minimum price difference needed to break even + profit
+                        // This is based on Strategy 1's deficit (the better of the two)
+                        if let Some(usdc_received_raw) = pangolin_usdc_back_raw {
+                            let usdc_received_display = format_units(usdc_received_raw, 6);
+                            let loss_display = initial_amount_usdc - usdc_received_display;
+                            let total_deficit_needed = loss_display + total_gas_cost_usdc_display + min_profit_threshold;
+                            let min_price_diff_needed = (total_deficit_needed / initial_amount_usdc) * 100.0;
+                            println!("   💡 Minimum price diff needed: {min_price_diff_needed:.3}% (to recover ${total_deficit_needed:.2} loss + gas + profit)");
+                        }
                     }
                 }
 
