@@ -848,7 +848,8 @@ async fn main() -> Result<()> {
                         let profit_net = format_units(profit_net_raw, 6);
                         let roi_net = profit_net / initial_amount_usdc;
                         let roi_net_pct = roi_net * 100.0;
-                        let gross_profit_usdc = format_units(usdc_received_raw.saturating_sub(amount_in), 6);
+                        let gross_profit_usdc =
+                            format_units(usdc_received_raw.saturating_sub(amount_in), 6);
                         let gas_cost_usdc = format_units(gas_cost_raw, 6);
 
                         if roi_net >= MIN_ROI_THRESHOLD {
@@ -912,7 +913,8 @@ async fn main() -> Result<()> {
                         let profit_net = format_units(profit_net_raw, 6);
                         let roi_net = profit_net / initial_amount_usdc;
                         let roi_net_pct = roi_net * 100.0;
-                        let gross_profit_usdc = format_units(usdc_received_raw.saturating_sub(amount_in), 6);
+                        let gross_profit_usdc =
+                            format_units(usdc_received_raw.saturating_sub(amount_in), 6);
                         let gas_cost_usdc = format_units(gas_cost_raw, 6);
 
                         if roi_net >= MIN_ROI_THRESHOLD {
@@ -961,8 +963,8 @@ async fn main() -> Result<()> {
                     let pangolin_out_display = format_units(pangolin_out_raw, 18);
 
                     let total_gas_cost_avax = gas_cost_avax * 2.0; // Two swaps
-                    // avax_price_raw is already in USDC units (6 decimals), so we need to convert it properly
-                    // Example: avax_price_raw = 25_950_000 means 25.95 USDC
+                                                                   // avax_price_raw is already in USDC units (6 decimals), so we need to convert it properly
+                                                                   // Example: avax_price_raw = 25_950_000 means 25.95 USDC
                     let avax_price_display = (avax_price_raw.as_u128() as f64) / 1_000_000.0;
                     let total_gas_cost_usdc_display = total_gas_cost_avax * avax_price_display;
 
@@ -1051,8 +1053,10 @@ async fn main() -> Result<()> {
                         if let Some(usdc_received_raw) = pangolin_usdc_back_raw {
                             let usdc_received_display = format_units(usdc_received_raw, 6);
                             let loss_display = initial_amount_usdc - usdc_received_display;
-                            let total_deficit_needed = loss_display + total_gas_cost_usdc_display + min_profit_threshold;
-                            let min_price_diff_needed = (total_deficit_needed / initial_amount_usdc) * 100.0;
+                            let total_deficit_needed =
+                                loss_display + total_gas_cost_usdc_display + min_profit_threshold;
+                            let min_price_diff_needed =
+                                (total_deficit_needed / initial_amount_usdc) * 100.0;
                             println!("   💡 Minimum price diff needed: {min_price_diff_needed:.3}% (to recover ${total_deficit_needed:.2} loss + gas + profit)");
                         }
                     }
